@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12313A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Manutenção">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Manutenção IMETEXTIL</title>
+<style>
+  html, body, #root { height: 100%; margin: 0; background: #12313A; overscroll-behavior: none; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
+  #root { display: flex; justify-content: center; }
+  #app { width: 100%; max-width: 520px; height: 100%; display: flex; position: relative; background: #EAF0EF; overflow: hidden; }
+  #app > div { flex: 1; display: flex; }
+  ion-icon { display: inline-block; flex-shrink: 0; }
+  .boot { margin: auto; color: #DCE8E5; font-size: 16px; text-align: center; padding: 24px; line-height: 1.5; }
+  .qr-overlay { position: fixed; inset: 0; z-index: 9999; background: #0B1F25; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px; }
+  .qr-overlay p { color: #DCE8E5; font-size: 15px; margin: 0; text-align: center; }
+  .qr-box { width: min(86vw, 360px); border-radius: 16px; overflow: hidden; background: #000; }
+  .qr-cancel { min-height: 52px; min-width: 200px; border-radius: 12px; border: 0; background: #F2A541; color: #142B32; font-size: 16px; font-weight: 700; }
+</style>
+<script type="module" src="https://cdn.jsdelivr.net/npm/ionicons@7.4.0/dist/ionicons/ionicons.esm.js"></script>
+<script src="config.js"></script>
+<script src="app-code.js"></script>
+</head>
+<body>
+<div id="root"><div id="app"><div class="boot" id="boot">Carregando o app da manutenção...</div></div></div>
+<script type="module">
+import React from 'https://esm.sh/react@18.3.1';
+import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
+import * as RNW from 'https://esm.sh/react-native-web@0.19.12?deps=react@18.3.1,react-dom@18.3.1';
+import * as Supabase from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+import { Html5Qrcode } from 'https://esm.sh/html5-qrcode@2.3.8';
+
+const h = React.createElement;
+
+// Ícones: mesmos nomes do Ionicons usados no app
+const Ionicons = (p) => h('ion-icon', { name: p.name, style: { fontSize: (p.size || 20) + 'px', color: p.color, width: (p.size || 20) + 'px', height: (p.size || 20) + 'px' } });
+
+// Navegação: abas e pilha de telas, com a mesma API usada pelo app (navigate, goBack, route.params)
+const NavCtx = React.createContext(null);
+const screensOf = (children) => React.Children.toArray(children).filter(Boolean).map((c) => c.props);
+function createStackNavigator() {
+  function Navigator(props) {
+    const screens = screensOf(props.children);
+    const parent = React.useContext(NavCtx);
+    const [stack, setStack] = React.useState([{ name: props.initialRouteName || screens[0].name, params: {} }]);
+    const navigation = React.useMemo(() => ({
+      navigate: (name, params) => {
+        if (screens.some((s) => s.name === name)) setStack((s) => s[s.length - 1].name === name ? s.slice(0, -1).concat([{ name, params: params || {} }]) : s.concat([{ name, params: params || {} }]));
+        else if (parent) parent.navigate(name, params);
+      },
+      goBack: () => setStack((s) => s.length > 1 ? s.slice(0, -1) : s),
+      __hasScreen: (name) => screens.some((s) => s.name === name)
+    }), [parent]);
+    React.useEffect(() => { try { window.scrollTo(0, 0); } catch (e) {} }, [stack.length]);
+    const top = stack[stack.length - 1];
+    const screen = screens.find((s) => s.name === top.name) || screens[0];
+    return h(NavCtx.Provider, { value: navigation }, h(screen.component, { navigation, route: { name: top.name, params: top.params } }));
+  }
+  return { Navigator, Screen: () => null };
+}
+function createBottomTabNavigator() {
+  function Navigator(props) {
+    const screens = screensOf(props.children);
+    const parent = React.useContext(NavCtx);
+    const [active, setActive] = React.useState(screens[0].name);
+    const [params, setParams] = React.useState({});
+    const navigation = React.useMemo(() => ({
+      navigate: (name, p) => {
+        if (screens.some((s) => s.name === name)) { setActive(name); setParams((o) => Object.assign({}, o, { [name]: p || o[name] || {} })); }
+        else if (parent) parent.navigate(name, p);
+      },
+      goBack: () => parent && parent.goBack()
+    }), [parent]);
+    const optionsFor = (name) => typeof props.screenOptions === 'function' ? props.screenOptions({ route: { name } }) : (props.screenOptions || {});
+    const base = optionsFor(active);
+    return h(NavCtx.Provider, { value: navigation },
+      h(RNW.View, { style: { flex: 1 } },
+        screens.map((s) => h(RNW.View, { key: s.name, style: { flex: 1, display: s.name === active ? 'flex' : 'none' } },
+          h(s.component, { navigation, route: { name: s.name, params: params[s.name] || {} } }))),
+        h(RNW.View, { style: [base.tabBarStyle || {}, { flexDirection: 'row', left: 0, right: 0 }] },
+          screens.map((s) => {
+            const o = optionsFor(s.name);
+            const isActive = s.name === active;
+            const color = isActive ? o.tabBarActiveTintColor : o.tabBarInactiveTintColor;
+            return h(RNW.TouchableOpacity, { key: s.name, onPress: () => navigation.navigate(s.name), style: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, backgroundColor: isActive ? o.tabBarActiveBackgroundColor : o.tabBarInactiveBackgroundColor } },
+              o.tabBarIcon ? o.tabBarIcon({ color, focused: isActive, size: 21 }) : null,
+              h(RNW.Text, { numberOfLines: 1, style: [o.tabBarLabelStyle || {}, { color }] }, s.name));
+          }))));
+  }
+  return { Navigator, Screen: () => null };
+}
+
+// Recursos do celular: guardar preferências, tirar foto e ler QR Code
+function useStorage(key, initial) {
+  const read = () => { try { const v = localStorage.getItem('imx:' + key); return v == null ? initial : JSON.parse(v); } catch (e) { return initial; } };
+  const [value, setValue] = React.useState(read);
+  const save = (next) => { setValue(next); try { localStorage.setItem('imx:' + key, JSON.stringify(next)); } catch (e) {} };
+  return [value, save];
+}
+function useCamera() {
+  const [photo, setPhoto] = React.useState(null);
+  const [error, setError] = React.useState(null);
+  const takePhoto = () => new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*'; input.setAttribute('capture', 'environment');
+    input.onchange = () => {
+      const file = input.files && input.files[0];
+      if (!file) return resolve({});
+      const next = { uri: URL.createObjectURL(file) };
+      setPhoto(next); setError(null); resolve({ photo: next });
+    };
+    input.click();
+  });
+  return { photo, error, takePhoto };
+}
+function useBarcodeScanner() {
+  const [barcode, setBarcode] = React.useState(null);
+  const [error, setError] = React.useState(null);
+  const isAvailable = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const scan = () => new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'qr-overlay';
+    overlay.innerHTML = '<p>Aponte a câmera para a etiqueta QR da máquina</p><div class="qr-box" id="imx-qr-box"></div><button class="qr-cancel" type="button">Cancelar</button>';
+    document.body.appendChild(overlay);
+    const reader = new Html5Qrcode('imx-qr-box');
+    let finished = false;
+    const finish = (result) => {
+      if (finished) return; finished = true;
+      const done = () => { overlay.remove(); resolve(result); };
+      reader.isScanning ? reader.stop().then(done, done) : done();
+    };
+    overlay.querySelector('button').onclick = () => finish({});
+    reader.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 240, height: 240 } }, (text) => { setBarcode({ value: text }); finish({ value: text }); }, () => {})
+      .catch(() => { const msg = 'Não foi possível abrir a câmera. Permita o acesso à câmera nas configurações do navegador.'; setError(msg); finish({ error: msg }); });
+  });
+  return { isAvailable, scan, barcode, error };
+}
+
+const RN = Object.assign({}, RNW, { Alert: { alert: (title, message) => window.alert(message || title) } });
+const modules = {
+  'react': React,
+  'react-native': RN,
+  '@react-native-vector-icons/ionicons': { Ionicons },
+  '@react-navigation/bottom-tabs': { createBottomTabNavigator },
+  '@react-navigation/stack': { createStackNavigator },
+  'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) },
+  '@supabase/supabase-js': Supabase,
+  'platform-hooks': { useStorage, useCamera, useBarcodeScanner }
+};
+const shimRequire = (name) => { if (!modules[name]) throw new Error('Módulo não disponível: ' + name); return modules[name]; };
+
+try {
+  const App = window.__buildImxApp(shimRequire, window.IMX_CONFIG || {});
+  document.getElementById('boot').remove();
+  const holder = document.createElement('div');
+  document.getElementById('app').appendChild(holder);
+  createRoot(holder).render(h(App));
+} catch (error) {
+  document.getElementById('boot').textContent = 'Não foi possível abrir o app: ' + error.message;
+  console.error(error);
+}
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(() => {}); }
+</script>
+</body>
+</html>
